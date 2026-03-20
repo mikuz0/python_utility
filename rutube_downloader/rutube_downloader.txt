@@ -1,0 +1,8 @@
+rutube_downloader/
+├── main.py
+├── gui.py
+├── downloader.py
+├── config.py
+├── utils.py
+├── conversion_settings_dialog.py
+└── requirements.txt
