@@ -4,6 +4,7 @@ from tkinter import ttk, messagebox, filedialog
 import threading
 import logging
 import os
+import git
 
 from core.git_wrapper import GitRepo
 from core.models import RepoStatus
@@ -133,33 +134,179 @@ class GitGUI:
                 self.refresh_status()
                 self.status_var.set(f"Репозиторий открыт: {folder}")
             except Exception as e:
-                messagebox.showerror("Ошибка", f"Не удалось открыть репозиторий: {e}")
+                error_msg = str(e)
+                messagebox.showerror("Ошибка", f"Не удалось открыть репозиторий: {error_msg}")
+    
+    def extract_repo_name(self, url):
+        """Извлекает имя репозитория из URL"""
+        # Убираем .git в конце, если есть
+        url = url.rstrip('/')
+        if url.endswith('.git'):
+            url = url[:-4]
+        
+        # Берем последнюю часть URL
+        parts = url.split('/')
+        if parts:
+            repo_name = parts[-1]
+            # Проверяем, что имя не пустое и не похоже на URL
+            if repo_name and not repo_name.startswith('http'):
+                return repo_name
+        return None
     
     def clone_repository(self):
         """Клонировать репозиторий"""
-        def do_clone(url, path):
-            try:
-                self.status_var.set("Клонирование...")
-                
-                def clone_thread():
-                    try:
-                        repo = GitRepo.clone(url, path)
-                        self.repo = repo
-                        self.repo_path = path
-                        self.root.after(0, self._update_repo_info)
-                        self.root.after(0, self.refresh_status)
-                        self.root.after(0, lambda: self.status_var.set("Клонирование завершено"))
-                    except Exception as e:
-                        self.root.after(0, lambda: messagebox.showerror("Ошибка", str(e)))
-                        self.root.after(0, lambda: self.status_var.set("Ошибка клонирования"))
-                
-                thread = threading.Thread(target=clone_thread)
-                thread.start()
-                
-            except Exception as e:
-                messagebox.showerror("Ошибка", str(e))
+        clone_window = tk.Toplevel(self.root)
+        clone_window.title("Клонировать репозиторий")
+        clone_window.geometry("600x300")
+        clone_window.resizable(False, False)
         
-        CloneDialog(self.root, do_clone)
+        # Делаем модальным
+        clone_window.transient(self.root)
+        clone_window.grab_set()
+        
+        main_frame = ttk.Frame(clone_window, padding="10")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # URL
+        ttk.Label(main_frame, text="URL репозитория:").pack(anchor=tk.W, pady=(0, 2))
+        url_entry = ttk.Entry(main_frame, width=70)
+        url_entry.pack(fill=tk.X, pady=(0, 10))
+        url_entry.insert(0, "https://github.com/")
+        url_entry.focus()
+        
+        # Папка назначения (родительская папка)
+        ttk.Label(main_frame, text="Родительская папка:").pack(anchor=tk.W, pady=(0, 2))
+        path_frame = ttk.Frame(main_frame)
+        path_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        path_entry = ttk.Entry(path_frame, width=50)
+        path_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        
+        # Предлагаем папку по умолчанию
+        default_path = os.path.join(os.path.expanduser("~"), "src")
+        path_entry.insert(0, default_path)
+        
+        def browse_folder():
+            folder = filedialog.askdirectory(
+                title="Выберите родительскую папку для клонирования",
+                initialdir=path_entry.get() or os.path.expanduser("~")
+            )
+            if folder:
+                path_entry.delete(0, tk.END)
+                path_entry.insert(0, folder)
+                update_info()
+        
+        ttk.Button(path_frame, text="Обзор", command=browse_folder).pack(side=tk.RIGHT)
+        
+        # Информация о том, как будет создана папка
+        info_label = ttk.Label(main_frame, text="", foreground="gray", wraplength=550)
+        info_label.pack(fill=tk.X, pady=5)
+        
+        def update_info(*args):
+            """Обновляет информационную строку о том, куда будет клонировано"""
+            url = url_entry.get().strip()
+            parent_path = path_entry.get().strip()
+            
+            if url and parent_path:
+                # Извлекаем имя репозитория из URL
+                repo_name = self.extract_repo_name(url)
+                if repo_name:
+                    full_path = os.path.join(parent_path, repo_name)
+                    info_label.config(text=f"📁 Будет создана папка: {full_path}")
+                else:
+                    info_label.config(text="⚠️ Не удалось определить имя репозитория из URL")
+            else:
+                info_label.config(text="")
+        
+        # Привязываем обновление информации к вводу
+        url_entry.bind('<KeyRelease>', lambda e: update_info())
+        path_entry.bind('<KeyRelease>', lambda e: update_info())
+        
+        # Статус
+        status_label = ttk.Label(main_frame, text="", foreground="gray")
+        status_label.pack(fill=tk.X, pady=5)
+        
+        def do_clone():
+            url = url_entry.get().strip()
+            parent_path = path_entry.get().strip()
+            
+            if not url or not parent_path:
+                messagebox.showerror("Ошибка", "Заполните все поля")
+                return
+            
+            # Извлекаем имя репозитория
+            repo_name = self.extract_repo_name(url)
+            if not repo_name:
+                messagebox.showerror("Ошибка", "Не удалось определить имя репозитория из URL")
+                return
+            
+            # Формируем полный путь для клонирования
+            full_path = os.path.join(parent_path, repo_name)
+            
+            # Проверяем, существует ли уже такая папка
+            if os.path.exists(full_path):
+                if os.path.isdir(full_path) and os.listdir(full_path):
+                    result = messagebox.askyesno(
+                        "Папка уже существует",
+                        f"Папка '{full_path}' уже существует и не пуста.\n\n"
+                        "Хотите открыть этот репозиторий вместо клонирования?"
+                    )
+                    if result:
+                        # Открываем существующий репозиторий
+                        try:
+                            self.repo = GitRepo(full_path)
+                            self.repo_path = full_path
+                            self._update_repo_info()
+                            self.refresh_status()
+                            self.status_var.set(f"Репозиторий открыт: {full_path}")
+                            clone_window.destroy()
+                        except Exception as e:
+                            error_msg = str(e)
+                            messagebox.showerror("Ошибка", f"Не удалось открыть репозиторий: {error_msg}")
+                    return
+            
+            clone_window.destroy()
+            
+            def clone_thread():
+                try:
+                    self.root.after(0, lambda: self.status_var.set(f"Клонирование в {full_path}..."))
+                    
+                    # Клонируем
+                    repo = git.Repo.clone_from(url, full_path)
+                    
+                    # Сохраняем репозиторий
+                    self.repo = GitRepo(full_path)
+                    self.repo_path = full_path
+                    
+                    # Успех
+                    self.root.after(0, self._update_repo_info)
+                    self.root.after(0, self.refresh_status)
+                    self.root.after(0, lambda: self.status_var.set(f"Клонировано: {full_path}"))
+                    self.root.after(0, lambda: messagebox.showinfo(
+                        "Успех", 
+                        f"Репозиторий '{repo_name}' склонирован в:\n{full_path}"
+                    ))
+                    
+                except Exception as e:
+                    error_msg = str(e)
+                    self.root.after(0, lambda: self.status_var.set("Ошибка клонирования"))
+                    self.root.after(0, lambda msg=error_msg: messagebox.showerror(
+                        "Ошибка клонирования", 
+                        f"{msg}\n\nURL: {url}\nПапка: {full_path}"
+                    ))
+            
+            thread = threading.Thread(target=clone_thread)
+            thread.start()
+        
+        # Кнопки
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill=tk.X, pady=(10, 0))
+        
+        ttk.Button(button_frame, text="Клонировать", command=do_clone).pack(side=tk.RIGHT, padx=2)
+        ttk.Button(button_frame, text="Отмена", command=clone_window.destroy).pack(side=tk.RIGHT, padx=2)
+        
+        # Инициализируем информацию
+        update_info()
     
     def refresh_status(self):
         """Обновить статус файлов"""
@@ -181,8 +328,9 @@ class GitGUI:
             )
             
         except Exception as e:
-            self.status_var.set(f"Ошибка: {e}")
-            logger.error(f"Ошибка обновления статуса: {e}")
+            error_msg = str(e)
+            self.status_var.set(f"Ошибка: {error_msg}")
+            logger.error(f"Ошибка обновления статуса: {error_msg}")
     
     def stage_selected(self):
         """Добавить выбранные файлы в индекс"""
@@ -198,6 +346,8 @@ class GitGUI:
         if self.repo.stage_files(files):
             self.refresh_status()
             self.status_var.set(f"Добавлено в индекс: {len(files)} файлов")
+        else:
+            messagebox.showerror("Ошибка", "Не удалось добавить файлы в индекс")
     
     def stage_all(self):
         """Добавить все измененные файлы в индекс"""
@@ -208,6 +358,8 @@ class GitGUI:
         if self.repo.stage_files(all_files):
             self.refresh_status()
             self.status_var.set("Все файлы добавлены в индекс")
+        else:
+            messagebox.showerror("Ошибка", "Не удалось добавить файлы в индекс")
     
     def unstage_selected(self):
         """Убрать файлы из индекса"""
@@ -223,6 +375,8 @@ class GitGUI:
         if self.repo.unstage_files(files):
             self.refresh_status()
             self.status_var.set(f"Убрано из индекса: {len(files)} файлов")
+        else:
+            messagebox.showerror("Ошибка", "Не удалось убрать файлы из индекса")
     
     def commit_changes(self):
         """Сделать коммит"""
@@ -243,6 +397,8 @@ class GitGUI:
             self.commit_area.clear()
             self.refresh_status()
             self.status_var.set("Коммит создан успешно")
+        else:
+            messagebox.showerror("Ошибка", "Не удалось создать коммит")
     
     def push_changes(self):
         """Отправить изменения на удаленный репозиторий"""
@@ -254,11 +410,19 @@ class GitGUI:
             return
         
         def push_thread():
-            if self.repo.push():
-                self.root.after(0, lambda: self.status_var.set("Изменения отправлены"))
-                self.root.after(0, self.refresh_status)
-            else:
-                self.root.after(0, lambda: messagebox.showerror("Ошибка", "Не удалось отправить изменения"))
+            try:
+                if self.repo.push():
+                    self.root.after(0, lambda: self.status_var.set("Изменения отправлены"))
+                    self.root.after(0, self.refresh_status)
+                else:
+                    self.root.after(0, lambda: messagebox.showerror(
+                        "Ошибка", 
+                        "Не удалось отправить изменения\n\n"
+                        "Проверьте подключение к интернету и настройки удаленного репозитория"
+                    ))
+            except Exception as e:
+                error_msg = str(e)
+                self.root.after(0, lambda msg=error_msg: messagebox.showerror("Ошибка push", msg))
         
         thread = threading.Thread(target=push_thread)
         thread.start()
@@ -274,11 +438,19 @@ class GitGUI:
             return
         
         def pull_thread():
-            if self.repo.pull():
-                self.root.after(0, lambda: self.status_var.set("Изменения получены"))
-                self.root.after(0, self.refresh_status)
-            else:
-                self.root.after(0, lambda: messagebox.showerror("Ошибка", "Не удалось получить изменения"))
+            try:
+                if self.repo.pull():
+                    self.root.after(0, lambda: self.status_var.set("Изменения получены"))
+                    self.root.after(0, self.refresh_status)
+                else:
+                    self.root.after(0, lambda: messagebox.showerror(
+                        "Ошибка", 
+                        "Не удалось получить изменения\n\n"
+                        "Проверьте подключение к интернету"
+                    ))
+            except Exception as e:
+                error_msg = str(e)
+                self.root.after(0, lambda msg=error_msg: messagebox.showerror("Ошибка pull", msg))
         
         thread = threading.Thread(target=pull_thread)
         thread.start()
@@ -293,16 +465,22 @@ class GitGUI:
         history_window.title("История коммитов")
         history_window.geometry("600x400")
         
+        # Делаем модальным
+        history_window.transient(self.root)
+        
         from tkinter import scrolledtext
         text_area = scrolledtext.ScrolledText(history_window, wrap=tk.WORD)
         text_area.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
         commits = self.repo.get_commits()
-        for commit in commits:
-            text_area.insert(tk.END, f"Коммит: {commit.short_sha}\n")
-            text_area.insert(tk.END, f"Автор: {commit.author}\n")
-            text_area.insert(tk.END, f"Дата: {commit.date}\n")
-            text_area.insert(tk.END, f"Сообщение: {commit.message}\n")
-            text_area.insert(tk.END, "-" * 50 + "\n\n")
+        if commits:
+            for commit in commits:
+                text_area.insert(tk.END, f"Коммит: {commit.short_sha}\n")
+                text_area.insert(tk.END, f"Автор: {commit.author}\n")
+                text_area.insert(tk.END, f"Дата: {commit.date}\n")
+                text_area.insert(tk.END, f"Сообщение: {commit.message}\n")
+                text_area.insert(tk.END, "-" * 50 + "\n\n")
+        else:
+            text_area.insert(tk.END, "Нет коммитов в этом репозитории")
         
         text_area.configure(state='disabled')
