@@ -1,0 +1,18 @@
+git_gui/
+├── main.py                 # Точка входа
+├── core/
+│   ├── __init__.py
+│   ├── git_wrapper.py     # Работа с Git
+│   └── models.py          # Классы данных
+├── gui/
+│   ├── __init__.py
+│   ├── main_window.py     # Главное окно
+│   ├── widgets/
+│   │   ├── __init__.py
+│   │   ├── file_list.py   # Список файлов
+│   │   └── commit_area.py # Область коммита
+│   └── dialogs/
+│       ├── __init__.py
+│       └── clone_dialog.py # Диалог клонирования
+└── assets/
+    └── icons/              # Для будущих иконок
