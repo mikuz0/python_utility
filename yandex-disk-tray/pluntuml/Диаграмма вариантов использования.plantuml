@@ -1,0 +1,44 @@
+@startuml
+!theme plain
+title Варианты использования
+
+actor Пользователь
+
+rectangle "Yandex.Disk Tray" {
+    
+    usecase "Просмотр статуса" as UC1
+    usecase "Пауза синхронизации" as UC2
+    usecase "Возобновление синхронизации" as UC3
+    usecase "Принудительная синхронизация" as UC4
+    usecase "Перезапуск диска" as UC5
+    usecase "Открыть папку Яндекс.Диска" as UC6
+    usecase "Просмотр логов" as UC7
+    usecase "Управление автозапуском" as UC8
+    usecase "Выход из программы" as UC9
+}
+
+Пользователь --> UC1
+Пользователь --> UC2
+Пользователь --> UC3
+Пользователь --> UC4
+Пользователь --> UC5
+Пользователь --> UC6
+Пользователь --> UC7
+Пользователь --> UC8
+Пользователь --> UC9
+
+UC1 ..> UC2 : включает
+UC1 ..> UC3 : включает
+UC2 ..> UC5 : может вызвать
+UC3 ..> UC5 : может вызвать
+
+note right of UC4
+  Запускает yandex-disk sync
+  Принудительно синхронизирует
+end note
+
+note right of UC8
+  Создаёт/удаляет .desktop файл
+  в ~/.config/autostart/
+end note
+@enduml

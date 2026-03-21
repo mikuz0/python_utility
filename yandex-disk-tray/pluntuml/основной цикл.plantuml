@@ -1,0 +1,51 @@
+@startuml
+!theme plain
+title Цикл работы монитора
+
+start
+
+:Инициализация монитора;
+:manual_stop = False;
+:force_sync = False;
+
+while (Программа работает?) is (да)
+    
+    :Проверить процесс yandex-disk;
+    
+    if (Процесс запущен?) then (нет)
+        if (manual_stop?) then (да)
+            :Ожидание ручной остановки;
+            :sleep(2);
+        else (нет)
+            :Вывести предупреждение;
+            :Запустить yandex-disk start;
+            :start_time = текущее время;
+            :warning_shown = False;
+            :sleep(2);
+        endif
+    else (да)
+        :Сбросить start_time;
+        :Получить статус yandex-disk status;
+        
+        if (force_sync?) then (да)
+            if (статус running?) then (да)
+                :Запустить yandex-disk sync;
+                :Вывести уведомление о синхронизации;
+            else (нет)
+                :Вывести ошибку: диск не активен;
+            endif
+            :force_sync = False;
+        endif
+        
+        if (статус изменился?) then (да)
+            :emit status_changed;
+        endif
+        
+        :sleep(2);
+    endif
+    
+endwhile (нет)
+
+:Остановка монитора;
+stop
+@enduml

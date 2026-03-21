@@ -1,0 +1,78 @@
+@startuml
+!theme plain
+title Диаграмма классов Yandex.Disk Tray
+
+class YandexDiskTray {
+    -app: QApplication
+    -tray: QSystemTrayIcon
+    -menu: QMenu
+    -icons: dict
+    -status_action: QAction
+    -monitor: YandexDiskMonitor
+    -config_dir: Path
+    
+    +__init__(app)
+    -create_icons()
+    -create_menu()
+    -check_initial_status()
+    +update_status(status_code, status_text)
+    -update_tooltip()
+    -show_warning(message)
+    +on_pause_sync()
+    +on_resume_sync()
+    +on_force_sync()
+    +on_restart_disk()
+    +on_open_folder()
+    +on_show_logs()
+    +on_toggle_autostart(checked)
+    +on_quit()
+}
+
+class YandexDiskMonitor {
+    -running: bool
+    -last_status: str
+    -manual_stop: bool
+    -force_sync: bool
+    -start_attempts: int
+    
+    +stop()
+    +set_manual_stop(manual)
+    +force_sync_now()
+    -check_disk_running()
+    -start_disk()
+    -stop_disk()
+    -sync_disk()
+    -get_status()
+    +get_disk_usage()
+    +run()
+    
+    <<signal>>
+    status_changed(status, text)
+    warning(message)
+    sync_progress(message)
+}
+
+class Utils {
+    {static} +is_autostart_enabled()
+    {static} +set_autostart(enabled, script_path)
+    {static} +open_folder()
+    {static} +show_logs(config_dir)
+    {static} +get_disk_usage()
+}
+
+YandexDiskTray --> YandexDiskMonitor : содержит
+YandexDiskTray ..> Utils : использует
+YandexDiskMonitor ..> Utils : использует
+
+note right of YandexDiskMonitor
+  Работает в отдельном потоке
+  Мониторит статус каждые 2 секунды
+  Управляет процессом yandex-disk
+end note
+
+note right of Utils
+  Вспомогательные функции
+  Работа с файловой системой
+  Вызов внешних команд
+end note
+@enduml

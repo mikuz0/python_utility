@@ -1,0 +1,43 @@
+@startuml
+!theme plain
+title Принудительная синхронизация
+
+actor Пользователь
+participant "GUI" as GUI
+participant "Monitor\n(отдельный поток)" as Monitor
+participant "yandex-disk" as YD
+
+Пользователь -> GUI: Нажать "Принудительная синхронизация"
+activate GUI
+
+GUI -> Monitor: force_sync_now()
+activate Monitor
+note right of Monitor: Устанавливает force_sync = True
+
+Monitor --> GUI: OK
+deactivate Monitor
+
+GUI -> GUI: show_warning("Синхронизация запущена")
+GUI --> Пользователь: Уведомление
+
+note over Monitor: Следующий цикл мониторинга
+
+Monitor -> Monitor: force_sync == True?
+Monitor -> YD: yandex-disk status
+YD --> Monitor: статус
+
+alt статус = "running"
+    Monitor -> YD: yandex-disk sync
+    YD --> Monitor: синхронизация запущена
+    Monitor -> GUI: sync_progress.emit()
+    GUI -> GUI: show_warning("Принудительная синхронизация запущена")
+    GUI --> Пользователь: Уведомление
+else статус ≠ "running"
+    Monitor -> GUI: warning.emit("Диск не активен")
+    GUI -> GUI: show_warning("Невозможно запустить синхронизацию")
+    GUI --> Пользователь: Уведомление об ошибке
+end
+
+Monitor -> Monitor: force_sync = False
+
+@enduml

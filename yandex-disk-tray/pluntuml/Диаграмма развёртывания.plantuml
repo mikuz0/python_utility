@@ -1,0 +1,51 @@
+@startuml
+!theme plain
+title Развёртывание Yandex.Disk Tray
+
+node "Linux Desktop" {
+    
+    node "Пользовательское окружение" {
+        artifact "Системный трей" as Tray
+        artifact "Файловый менеджер" as FM
+        artifact "Терминал" as Terminal
+    }
+    
+    node "Файловая система" {
+        artifact "~/.config/autostart/\nyandex-disk-tray.desktop" as AutostartFile
+        artifact "~/.config/yandex-disk-tray/" as ConfigDir
+        artifact "~/Yandex.Disk/" as DiskFolder
+    }
+    
+    node "Python окружение" {
+        artifact "main.py" as MainFile
+        artifact "tray_icon.py" as TrayFile
+        artifact "monitor.py" as MonitorFile
+        artifact "utils.py" as UtilsFile
+    }
+    
+    node "Системные зависимости" {
+        artifact "PyQt6" as PyQt
+        artifact "yandex-disk CLI" as YDCli
+        artifact "xdg-open" as XdgOpen
+        artifact "notify-send" as Notify
+    }
+}
+
+MainFile --> TrayFile : импортирует
+MainFile --> MonitorFile : импортирует
+MainFile --> UtilsFile : импортирует
+MainFile --> PyQt : использует
+
+TrayFile --> PyQt : использует Qt
+MonitorFile --> YDCli : вызывает
+
+UtilsFile --> YDCli : вызывает
+UtilsFile --> XdgOpen : вызывает
+UtilsFile --> Notify : вызывает
+UtilsFile --> AutostartFile : создаёт/удаляет
+UtilsFile --> ConfigDir : создаёт
+UtilsFile --> DiskFolder : открывает
+
+YDCli --> DiskFolder : синхронизирует
+
+@enduml

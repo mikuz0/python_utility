@@ -1,0 +1,44 @@
+@startuml
+!theme plain
+title Архитектура Yandex.Disk Tray
+
+' Компоненты
+package "Yandex.Disk Tray" {
+    
+    [main.py] as Main
+    [tray_icon.py] as TrayIcon
+    [monitor.py] as Monitor
+    [utils.py] as Utils
+    
+    component "PyQt6" {
+        [QApplication] as QtApp
+        [QSystemTrayIcon] as QtTray
+        [QMenu] as QtMenu
+    }
+    
+    component "Внешние системы" {
+        [yandex-disk CLI] as YDCli
+        [Системный трей] as SystemTray
+        [Автозагрузка] as Autostart
+        [Файловый менеджер] as FileManager
+    }
+}
+
+' Связи
+Main --> TrayIcon : создаёт
+Main --> QtApp : использует
+
+TrayIcon --> Monitor : запускает
+TrayIcon --> Utils : вызывает
+TrayIcon --> QtTray : управляет
+TrayIcon --> QtMenu : создаёт
+
+Monitor --> YDCli : вызывает
+Monitor --> Utils : использует
+
+Utils --> YDCli : выполняет команды
+Utils --> Autostart : создаёт/удаляет .desktop
+Utils --> FileManager : открывает папку
+
+QtTray --> SystemTray : отображается
+@enduml

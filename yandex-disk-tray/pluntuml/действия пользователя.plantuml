@@ -1,0 +1,55 @@
+@startuml
+!theme plain
+title Действия пользователя
+
+actor Пользователь
+participant "QSystemTrayIcon" as Tray
+participant "YandexDiskTray" as GUI
+participant "YandexDiskMonitor" as Monitor
+participant "yandex-disk" as YD
+
+== Пауза ==
+Пользователь -> Tray: правый клик
+Tray -> GUI: показать меню
+Пользователь -> GUI: нажать "Пауза"
+GUI -> Monitor: set_manual_stop(True)
+GUI -> YD: yandex-disk stop
+YD --> GUI: выполнено
+GUI -> Tray: showMessage("Приостановлена")
+note right: Монитор видит manual_stop=True\nи НЕ перезапускает диск
+
+== Возобновление ==
+Пользователь -> GUI: нажать "Возобновить"
+GUI -> Monitor: set_manual_stop(False)
+GUI -> YD: yandex-disk start
+YD --> GUI: выполнено
+GUI -> Tray: showMessage("Возобновлена")
+
+== Принудительная синхронизация ==
+Пользователь -> GUI: нажать "Принудительная синхронизация"
+GUI -> Monitor: force_sync_now()
+Monitor -> YD: yandex-disk sync
+YD --> Monitor: синхронизация запущена
+Monitor -> GUI: sync_progress.emit()
+GUI -> Tray: showMessage("Синхронизация запущена")
+
+== Автозапуск ==
+Пользователь -> GUI: нажать "Автозапуск"
+GUI -> GUI: is_autostart_enabled()
+GUI -> GUI: set_autostart(checked)
+alt checked = True
+    GUI -> GUI: создать .desktop файл
+    GUI -> Tray: showMessage("Автозапуск включен")
+else checked = False
+    GUI -> GUI: удалить .desktop файл
+    GUI -> Tray: showMessage("Автозапуск выключен")
+end
+
+== Открыть папку ==
+Пользователь -> GUI: нажать "Открыть папку"
+GUI -> GUI: open_folder()
+GUI -> GUI: ищет папку Yandex.Disk
+GUI -> GUI: xdg-open ~/Yandex.Disk
+GUI -> Tray: showMessage("Папка открыта")
+
+@enduml

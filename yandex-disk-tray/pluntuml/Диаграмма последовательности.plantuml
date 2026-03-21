@@ -1,0 +1,52 @@
+@startuml
+!theme plain
+title Последовательность запуска программы
+
+actor Пользователь
+participant "main.py" as Main
+participant "YandexDiskTray" as Tray
+participant "YandexDiskMonitor" as Monitor
+participant "QSystemTrayIcon" as QtTray
+participant "yandex-disk" as YD
+
+Пользователь -> Main: python3 main.py
+activate Main
+
+Main -> Tray: __init__(app)
+activate Tray
+
+Tray -> Tray: create_icons()
+Tray -> Tray: create_menu()
+Tray -> QtTray: setIcon()
+Tray -> QtTray: setVisible(True)
+
+Tray -> Monitor: YandexDiskMonitor()
+Tray -> Monitor: status_changed.connect()
+Tray -> Monitor: warning.connect()
+
+Tray -> Monitor: start()
+activate Monitor
+note right: Монитор запущен в отдельном потоке
+
+Tray -> Tray: check_initial_status()
+Tray -> Monitor: check_disk_running()
+Monitor -> YD: ps aux | grep yandex-disk
+YD --> Monitor: результат
+Monitor --> Tray: False (не запущен)
+
+Tray -> Monitor: start_disk()
+Monitor -> YD: yandex-disk start
+YD --> Monitor: процесс запущен
+
+Tray --> Main: готово
+Main --> Пользователь: иконка в трее
+
+loop Каждые 2 секунды
+    Monitor -> YD: yandex-disk status
+    YD --> Monitor: статус
+    Monitor -> Tray: status_changed.emit()
+    Tray -> QtTray: setIcon()
+    Tray -> QtTray: setToolTip()
+end
+
+@enduml
