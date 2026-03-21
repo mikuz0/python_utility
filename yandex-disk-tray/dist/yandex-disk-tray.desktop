@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Yandex.Disk Tray
+Comment=GUI для Яндекс.Диска
+Exec=yandex-disk-tray
+Icon=yandex-disk
+Terminal=false
+Categories=Network;FileTransfer;
+StartupNotify=true
+X-GNOME-Autostart-enabled=true

@@ -1,10 +1,10 @@
-#!/usr/bin/env xdg-open
 [Desktop Entry]
-Name=Яндекс.Диск Tray
-Comment=Управление Яндекс.Диском из трея
-Exec=$HOME/bin/yandex-disk-tray.py
+Type=Application
+Name=Yandex.Disk Tray
+Comment=GUI для Яндекс.Диска
+Exec=yandex-disk-tray
 Icon=yandex-disk
 Terminal=false
-Type=Application
 Categories=Network;FileTransfer;
-EOF
+StartupNotify=true
+X-GNOME-Autostart-enabled=true
