@@ -1,0 +1,14 @@
+StructureAnalyzer/
+├── main.py                    # Главный файл приложения
+├── models/
+│   ├── __init__.py
+│   ├── project_parser.py     # Парсер файла структуры
+│   └── file_system_analyzer.py # Анализатор файловой системы
+├── views/
+│   ├── __init__.py
+│   └── main_window.py         # Главное окно приложения
+├── utils/
+│   ├── __init__.py
+│   └── file_utils.py          # Утилиты для работы с файлами
+└── resources/
+    └── styles.qss             # Стили для приложения

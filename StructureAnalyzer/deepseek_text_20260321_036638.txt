@@ -1,0 +1,14 @@
+DPCreator/
+├── main.py
+├── models/
+│   ├── __init__.py
+│   ├── project_parser.py
+│   └── file_system_analyzer.py
+├── views/
+│   ├── __init__.py
+│   └── main_window.py
+├── utils/
+│   ├── __init__.py
+│   └── file_utils.py
+└── resources/
+    └── styles.qss
