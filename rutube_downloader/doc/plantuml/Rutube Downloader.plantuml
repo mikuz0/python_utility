@@ -1,0 +1,434 @@
+@startuml
+' ============================================
+' Rutube Downloader - Диаграммы проекта
+' ============================================
+
+title Rutube Downloader - Архитектура проекта
+
+' ============================================
+' 1. ДИАГРАММА КОМПОНЕНТОВ
+' ============================================
+
+package "Rutube Downloader" {
+    
+    component "GUI" as GUI
+    component "Download Worker" as Worker
+    component "Video Downloader" as Downloader
+    component "FFmpeg Engine" as FFmpeg
+    component "Config Manager" as Config
+    
+    database "Settings" as Settings
+    database "Temporary Files" as Temp
+    
+    actor "User" as User
+    
+    User --> GUI : Взаимодействие
+    GUI --> Worker : Запуск обработки ссылок
+    GUI --> Downloader : Управление очередью
+    GUI --> Config : Чтение/запись настроек
+    
+    Worker --> Downloader : Получение информации о видео
+    Downloader --> FFmpeg : Вызов ffmpeg
+    Downloader --> Temp : Создание временных файлов
+    
+    Config --> Settings : Сохранение настроек
+    FFmpeg --> Temp : Чтение/запись
+}
+
+note right of GUI
+    Графический интерфейс на PyQt5
+    - Главное окно
+    - Список видео
+    - Настройки конвертации
+end note
+
+note right of Downloader
+    Основная логика:
+    - Скачивание видео
+    - Конвертация
+    - Обработка очереди
+end note
+
+' ============================================
+' 2. ДИАГРАММА КЛАССОВ
+' ============================================
+
+class MainWindow {
+    - downloader: VideoDownloader
+    - video_items: list
+    - config: dict
+    - current_download_path: str
+    --
+    + init_ui()
+    + add_urls()
+    + start_download()
+    + stop_download()
+    + show_conversion_settings()
+    + on_download_finished(video_id, success, message)
+    + on_progress_updated(video_id, progress, total_size)
+    + on_conversion_progress(video_id, progress)
+}
+
+class VideoDownloader {
+    - download_queue: list
+    - is_running: bool
+    - ffmpeg_path: str
+    - session: Session
+    --
+    + add_to_queue(video_info, download_path, quality, conversion_settings)
+    + run()
+    + stop()
+    + get_video_info(url)
+    - download_and_convert(video_info)
+    - build_ffmpeg_command(input_url, output_file, video_info, settings)
+    - find_ffmpeg()
+    - check_ffmpeg()
+    ~~ signals ~~
+    progress_updated: pyqtSignal(str, int, int)
+    status_updated: pyqtSignal(str, str)
+    conversion_progress: pyqtSignal(str, int)
+    download_finished: pyqtSignal(str, bool, str)
+    ffmpeg_check: pyqtSignal(bool, str)
+}
+
+class VideoInfo {
+    + url: str
+    + video_id: str
+    + title: str
+    + duration: int
+    + description: str
+    + qualities: dict
+    + selected_quality: str
+    + status: str
+    + download_path: str
+    + conversion_settings: dict
+}
+
+class Config {
+    + CONFIG_FILE: Path
+    + AVAILABLE_CODECS: dict
+    + AVAILABLE_RESOLUTIONS: list
+    + AVAILABLE_BITRATES: dict
+    + COMPATIBILITY_PRESETS: dict
+    --
+    + load_config()
+    + save_config(config)
+    + get_download_path()
+    + set_download_path(path)
+    + get_conversion_settings()
+    + get_compatibility_settings()
+    + get_level_for_resolution(width, height, fps)
+}
+
+class ConversionSettingsDialog {
+    - conversion_settings: dict
+    - compatibility_settings: dict
+    --
+    + init_ui()
+    + load_settings()
+    + get_settings()
+    - on_conversion_toggled(enabled)
+    - on_compat_toggled(enabled)
+    - on_codec_changed()
+}
+
+class VideoItemWidget {
+    - video_info: VideoInfo
+    - checkbox: QCheckBox
+    - quality_combo: QComboBox
+    - status_label: QLabel
+    - progress_bar: QProgressBar
+    --
+    + update_status(status, progress)
+    + get_selected_quality()
+    ~~ signals ~~
+    remove_clicked: pyqtSignal(object)
+}
+
+MainWindow --> VideoDownloader
+MainWindow --> ConversionSettingsDialog
+MainWindow --> VideoItemWidget
+VideoDownloader --> VideoInfo
+VideoDownloader --> Config
+ConversionSettingsDialog --> Config
+
+' ============================================
+' 3. ДИАГРАММА ПОСЛЕДОВАТЕЛЬНОСТИ (Скачивание)
+' ============================================
+
+@startuml
+title Диаграмма последовательности - Скачивание видео
+
+actor User
+participant "MainWindow" as GUI
+participant "VideoDownloader" as Downloader
+participant "FFmpeg" as FF
+participant "Rutube API" as API
+participant "File System" as FS
+
+User -> GUI: Вставка ссылки
+GUI -> GUI: add_urls()
+GUI -> Downloader: get_video_info(url)
+Downloader -> API: GET /api/play/options/{id}
+API --> Downloader: video_data
+Downloader -> API: GET /api/video/{id}
+API --> Downloader: meta_data
+Downloader --> GUI: VideoInfo
+GUI -> GUI: add_video_to_list()
+
+User -> GUI: Выбор видео и нажатие "Скачать"
+GUI -> GUI: start_download()
+GUI -> Downloader: add_to_queue(video_info, quality, settings)
+GUI -> Downloader: start()
+
+loop Очередь видео
+    Downloader -> Downloader: download_and_convert(video_info)
+    
+    alt Конвертация включена
+        Downloader -> Downloader: build_ffmpeg_command()
+        Downloader -> FF: ffmpeg -i {url} -c:v libx264 ...
+        FF -> API: GET {video_url}
+        API --> FF: video_stream
+        FF -> FS: write output_file
+        FF --> Downloader: progress (stderr)
+        Downloader --> GUI: conversion_progress(video_id, progress)
+    else Конвертация отключена
+        Downloader -> FF: ffmpeg -i {url} -c copy
+        FF -> API: GET {video_url}
+        API --> FF: video_stream
+        FF -> FS: write output_file
+        FF --> Downloader: progress
+        Downloader --> GUI: progress_updated(video_id, progress)
+    end
+    
+    Downloader --> GUI: download_finished(video_id, success, output_path)
+    GUI -> GUI: on_download_finished()
+    GUI --> User: Отображение результата
+end
+@enduml
+
+' ============================================
+' 4. ДИАГРАММА СОСТОЯНИЙ (Видео)
+' ============================================
+
+@startuml
+title Диаграмма состояний - Процесс обработки видео
+
+[*] --> Ожидание : Видео добавлено в список
+
+Ожидание --> Обработка : Пользователь нажал "Скачать"
+
+state Обработка {
+    [*] --> Получение информации
+    Получение информации --> Скачивание : Информация получена
+    Получение информации --> Ошибка : Не удалось получить информацию
+    
+    Скачивание --> Конвертация : Конвертация включена
+    Скачивание --> Завершение : Конвертация отключена
+    
+    state Конвертация {
+        [*] --> Подготовка
+        Подготовка --> Кодирование : Команда сформирована
+        Кодирование --> Финализация : Кодирование завершено
+        Финализация --> [*]
+    }
+    
+    Завершение --> [*]
+    Ошибка --> [*]
+}
+
+Обработка --> Завершено : Успешно
+Обработка --> Ошибка : Сбой
+
+Завершено --> [*]
+Ошибка --> [*]
+
+note right of Конвертация
+    Параметры конвертации:
+    - Кодек (H264/H265/VP9)
+    - Разрешение
+    - Битрейт
+    - Пресет
+    - Режим совместимости
+end note
+@enduml
+
+' ============================================
+' 5. ДИАГРАММА ДЕЯТЕЛЬНОСТИ (Конвертация)
+' ============================================
+
+@startuml
+title Диаграмма деятельности - Процесс конвертации
+
+start
+
+:Проверка FFmpeg;
+if (FFmpeg доступен?) then (да)
+else (нет)
+    :Показать предупреждение;
+    :Использовать только скачивание;
+    stop
+endif
+
+:Получить настройки конвертации;
+:Получить URL видео;
+
+if (Режим совместимости?) then (да)
+    :Принудительно установить H264;
+    :Установить ref=1, уровень под разрешение;
+    :Ограничить битрейт;
+    :Отключить B-кадры;
+else (нет)
+    :Использовать выбранный кодек;
+    :Использовать обычные настройки;
+endif
+
+:Собрать команду FFmpeg;
+
+:Запустить FFmpeg;
+
+repeat
+    :Читать stderr FFmpeg;
+    if (строка содержит "time=") then (да)
+        :Вычислить прогресс;
+        :Обновить GUI;
+    else (нет)
+        :Логировать вывод;
+    endif
+repeat while (FFmpeg завершен?) is (нет)
+-> (да);
+
+if (код возврата 0?) then (да)
+    :Проверить выходной файл;
+    if (файл существует и не пуст) then (да)
+        :Вернуть успех;
+        :Удалить временные файлы;
+    else (нет)
+        :Вернуть ошибку;
+    endif
+else (нет)
+    :Анализировать ошибку;
+    :Вернуть сообщение об ошибке;
+endif
+
+stop
+@enduml
+
+' ============================================
+' 6. ER-ДИАГРАММА КОНФИГУРАЦИИ
+' ============================================
+
+@startuml
+title ER-диаграмма - Структура конфигурации
+
+entity "Config" {
+    * download_path : string
+    * auto_open_folder : boolean
+    --
+    * conversion : Conversion
+    * compatibility : Compatibility
+}
+
+entity "Conversion" {
+    * enabled : boolean
+    * codec : string
+    * resolution : string
+    * video_bitrate : string
+    * audio_bitrate : integer
+    * preset : string
+    * pixel_format : string
+    * profile : string
+}
+
+entity "Compatibility" {
+    * enabled : boolean
+    * preset : string
+    * ref_frames : integer
+    * level : string
+    * maxrate_factor : float
+    * gop_seconds : integer
+    * no_b_frames : boolean
+    * profile : string
+}
+
+entity "Codec" {
+    * id : string
+    * name : string
+    * is_audio_only : boolean
+    * presets : list
+    * profiles : list
+    * pixel_formats : list
+    * sample_rates : list
+}
+
+entity "Resolution" {
+    * name : string
+    * width : integer
+    * height : integer
+}
+
+Config ||--o{ Conversion : contains
+Config ||--o{ Compatibility : contains
+Conversion }o--o{ Codec : uses
+Conversion }o--o{ Resolution : uses
+
+note right of Compatibility
+    Пресеты совместимости:
+    - old_tv (ref=1, level=min)
+    - old_phone (ref=2, level=auto)
+    - modern (ref=3)
+    - max_compat (ref=1, baseline)
+end note
+@enduml
+
+' ============================================
+' 7. СХЕМА ПОТОКОВ ДАННЫХ
+' ============================================
+
+@startuml
+title Схема потоков данных
+
+rectangle "Пользователь" as User
+
+rectangle "Графический интерфейс" as GUI {
+    rectangle "Главное окно" as MainWin
+    rectangle "Список видео" as VideoList
+    rectangle "Настройки" as SettingsWin
+}
+
+rectangle "Ядро приложения" as Core {
+    rectangle "Менеджер загрузок" as Queue
+    rectangle "Парсер ссылок" as Parser
+    rectangle "FFmpeg Wrapper" as FFMpegWrap
+}
+
+rectangle "Внешние сервисы" as External {
+    rectangle "Rutube API" as API
+    rectangle "FFmpeg" as FFmpegBin
+}
+
+database "Файловая система" as FS
+
+User --> GUI : URL
+GUI --> Parser : ссылка
+Parser --> API : запрос
+API --> Parser : video_data
+Parser --> VideoList : VideoInfo
+
+User --> SettingsWin : настройки
+SettingsWin --> Queue : параметры
+
+User --> MainWin : "Скачать"
+MainWin --> Queue : запуск
+Queue --> FFMpegWrap : видео URL
+FFMpegWrap --> FFmpegBin : команда
+FFmpegBin --> API : запрос потока
+API --> FFmpegBin : video stream
+FFmpegBin --> FS : готовый файл
+FFMpegWrap --> Queue : статус
+Queue --> GUI : прогресс
+GUI --> User : отображение
+
+@enduml
+
+@enduml
