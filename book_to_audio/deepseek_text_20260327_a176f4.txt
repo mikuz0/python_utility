@@ -1,0 +1,9 @@
+book_to_audio/
+│
+├── main.py
+├── config_manager.py
+├── text_extractor.py
+├── accent_processor.py
+├── audio_generator.py
+├── gui_app.py
+└── requirements.txt

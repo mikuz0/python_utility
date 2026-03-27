@@ -1,0 +1,11 @@
+{
+  "work_dir": "/home/mikuz/Downloads/boock",
+  "last_step": 0,
+  "accent_model": "medium",
+  "language": "ru",
+  "window_geometry": "900x740+816+1301",
+  "auto_save": true,
+  "voice": "ruslan_v2",
+  "speed": 1.0,
+  "output_format": "mp3"
+}
