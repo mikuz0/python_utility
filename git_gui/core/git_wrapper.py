@@ -1,6 +1,7 @@
-# core/git_wrapper.py
+# core/git_wrapper.py (полностью исправленный)
 import git
 import logging
+import subprocess
 from pathlib import Path
 from typing import Optional, List
 from .models import FileStatus, CommitInfo, RepoStatus
@@ -63,20 +64,41 @@ class GitRepo:
             diff = self.repo.index.diff(None)
             for item in diff:
                 if item.change_type == 'D':
-                    status.deleted.append(FileStatus(item.b_path, 'deleted'))
+                    status.deleted.append(FileStatus(item.a_path, 'deleted'))
                 elif item.change_type == 'R':
                     status.renamed.append(FileStatus(
                         item.rename_to, 'renamed', 
                         old_path=item.rename_from
                     ))
                 else:
-                    status.modified.append(FileStatus(item.b_path, 'modified'))
+                    # Для измененных файлов используем b_path (новый путь)
+                    path = item.b_path if item.b_path else item.a_path
+                    status.modified.append(FileStatus(path, 'modified'))
+            
+            # Проверяем удаленные файлы, которые не в индексе
+            # (файлы, удаленные вручную пользователем)
+            if not self.is_first_commit():
+                # Получаем все файлы, которые были в последнем коммите
+                head_commit = self.repo.head.commit
+                head_tree = head_commit.tree
+                
+                # Проверяем, какие файлы из коммита отсутствуют в рабочей директории
+                for blob in head_tree.traverse():
+                    if blob.path not in [f.path for f in status.deleted]:
+                        full_path = self.path / blob.path
+                        if not full_path.exists():
+                            # Файл был удален вручную
+                            status.deleted.append(FileStatus(blob.path, 'deleted'))
             
             # Проиндексированные изменения
             if not self.is_first_commit():
                 staged = self.repo.index.diff('HEAD')
                 for item in staged:
-                    status.staged.append(FileStatus(item.b_path, 'staged'))
+                    path = item.b_path if item.b_path else item.a_path
+                    # Проверяем, не добавлен ли уже этот файл как удаленный
+                    existing = next((f for f in status.staged if f.path == path), None)
+                    if not existing:
+                        status.staged.append(FileStatus(path, 'staged'))
             else:
                 # Для первого коммита
                 for path in self.repo.index.entries:
@@ -100,7 +122,20 @@ class GitRepo:
             bool: успешно ли выполнено
         """
         try:
-            self.repo.index.add(files)
+            # Проверяем, какие файлы были удалены вручную
+            for file in files:
+                full_path = self.path / file
+                if not full_path.exists() and not self.is_first_commit():
+                    # Файл удален, нужно выполнить git rm
+                    try:
+                        self.repo.index.remove([file], working_tree=False)
+                        logger.info(f"Файл удален из Git: {file}")
+                    except Exception as e:
+                        logger.warning(f"Не удалось удалить файл {file}: {e}")
+                else:
+                    # Обычное добавление
+                    self.repo.index.add([file])
+            
             logger.info(f"Добавлены в индекс: {files}")
             return True
         except Exception as e:
@@ -118,7 +153,16 @@ class GitRepo:
             bool: успешно ли выполнено
         """
         try:
-            self.repo.index.remove(files, working_tree=True)
+            for file in files:
+                try:
+                    # Пытаемся сбросить файл из индекса
+                    self.repo.index.remove([file], working_tree=False)
+                except:
+                    # Если файл не был добавлен через add, пробуем другие методы
+                    try:
+                        self.repo.index.reset(paths=[file])
+                    except:
+                        pass
             logger.info(f"Убраны из индекса: {files}")
             return True
         except Exception as e:
@@ -220,6 +264,47 @@ class GitRepo:
             logger.error(f"Ошибка получения истории: {e}")
         
         return commits
+    
+    def apply_deleted_files(self, files: List[str]) -> bool:
+        """
+        Применить удаление файлов (выполнить git rm)
+        
+        Args:
+            files: список удаленных файлов
+            
+        Returns:
+            bool: успешно ли выполнено
+        """
+        try:
+            for file in files:
+                try:
+                    # Пытаемся удалить файл из индекса Git
+                    # working_tree=False означает, что не пытаемся удалить файл из рабочей директории
+                    self.repo.index.remove([file], working_tree=False)
+                    logger.info(f"Удаление применено: {file}")
+                except Exception as e:
+                    logger.warning(f"Ошибка при удалении {file} через index.remove: {e}")
+                    # Пробуем альтернативный метод через subprocess
+                    try:
+                        result = subprocess.run(
+                            ['git', 'rm', '--cached', '--ignore-unmatch', file],
+                            cwd=str(self.path),
+                            capture_output=True,
+                            text=True,
+                            check=False
+                        )
+                        if result.returncode == 0:
+                            logger.info(f"Файл удален через git rm: {file}")
+                        else:
+                            logger.error(f"git rm ошибка для {file}: {result.stderr}")
+                            return False
+                    except Exception as sub_e:
+                        logger.error(f"Исключение при git rm для {file}: {sub_e}")
+                        return False
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка применения удалений: {e}")
+            return False
     
     @classmethod
     def clone(cls, url: str, path: str) -> 'GitRepo':

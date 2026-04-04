@@ -42,7 +42,12 @@ class FileListWidget(ttk.Frame):
         self.listbox.delete(0, tk.END)
         
         for file in self.files:
-            display_text = f"{file.icon} {file.path}"
+            # Добавляем индикатор для удаленных файлов
+            if file.status == 'deleted':
+                display_text = f"{file.icon} {file.path} [УДАЛЕН]"
+            else:
+                display_text = f"{file.icon} {file.path}"
+            
             self.listbox.insert(tk.END, display_text)
             self.listbox.itemconfig(tk.END, fg=file.color)
     

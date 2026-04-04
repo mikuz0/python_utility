@@ -8,6 +8,7 @@ import git
 
 from core.git_wrapper import GitRepo
 from core.models import RepoStatus
+from core.config import Config
 from gui.widgets import FileListWidget, CommitAreaWidget
 from gui.dialogs import CloneDialog
 
@@ -22,7 +23,7 @@ class GitGUI:
         self.repo_path = None
         
         self._create_widgets()
-        self._check_current_directory()
+        self._load_last_repository()
     
     def _create_widgets(self):
         """Создание интерфейса"""
@@ -78,6 +79,10 @@ class GitGUI:
                   command=self.stage_selected).pack(side=tk.LEFT, padx=2)
         ttk.Button(left_buttons, text="✓ Stage все", 
                   command=self.stage_all).pack(side=tk.LEFT, padx=2)
+        ttk.Button(left_buttons, text="🗑️ Применить удаления (все)", 
+                  command=self.apply_deletions).pack(side=tk.LEFT, padx=2)
+        ttk.Button(left_buttons, text="🗑️ Применить удаления (выбранные)", 
+                  command=self.apply_selected_deletions).pack(side=tk.LEFT, padx=2)
         
         # Правая панель - проиндексированные файлы
         right_panel = ttk.Frame(main_frame)
@@ -104,17 +109,23 @@ class GitGUI:
                               relief=tk.SUNKEN, anchor=tk.W)
         status_bar.pack(fill=tk.X, side=tk.BOTTOM)
     
-    def _check_current_directory(self):
-        """Проверка текущей директории на наличие репозитория"""
-        try:
-            current_dir = os.getcwd()
-            repo = GitRepo(current_dir)
-            self.repo = repo
-            self.repo_path = current_dir
-            self._update_repo_info()
-            self.refresh_status()
-        except:
-            pass
+    def _load_last_repository(self):
+        """Загрузить последний использованный репозиторий"""
+        last_repo = Config.get_last_repo()
+        if last_repo:
+            try:
+                self.repo = GitRepo(last_repo)
+                self.repo_path = last_repo
+                self._update_repo_info()
+                self.refresh_status()
+                self.status_var.set(f"Загружен последний репозиторий: {last_repo}")
+            except Exception as e:
+                self.status_var.set(f"Не удалось загрузить последний репозиторий: {e}")
+    
+    def _save_repository_path(self):
+        """Сохранить путь к текущему репозиторию"""
+        if self.repo_path:
+            Config.save_last_repo(self.repo_path)
     
     def _update_repo_info(self):
         """Обновление информации о репозитории"""
@@ -122,6 +133,7 @@ class GitGUI:
             self.branch_var.set(self.repo.current_branch)
             remotes = ', '.join(self.repo.remotes) if self.repo.remotes else 'нет'
             self.repo_info.set(f"Репозиторий: {self.repo_path} | Удаленные: {remotes}")
+            self._save_repository_path()
     
     def open_repository(self):
         """Открыть существующий репозиторий"""
@@ -133,6 +145,7 @@ class GitGUI:
                 self._update_repo_info()
                 self.refresh_status()
                 self.status_var.set(f"Репозиторий открыт: {folder}")
+                self._save_repository_path()
             except Exception as e:
                 error_msg = str(e)
                 messagebox.showerror("Ошибка", f"Не удалось открыть репозиторий: {error_msg}")
@@ -259,6 +272,7 @@ class GitGUI:
                             self._update_repo_info()
                             self.refresh_status()
                             self.status_var.set(f"Репозиторий открыт: {full_path}")
+                            self._save_repository_path()
                             clone_window.destroy()
                         except Exception as e:
                             error_msg = str(e)
@@ -282,6 +296,7 @@ class GitGUI:
                     self.root.after(0, self._update_repo_info)
                     self.root.after(0, self.refresh_status)
                     self.root.after(0, lambda: self.status_var.set(f"Клонировано: {full_path}"))
+                    self.root.after(0, self._save_repository_path)
                     self.root.after(0, lambda: messagebox.showinfo(
                         "Успех", 
                         f"Репозиторий '{repo_name}' склонирован в:\n{full_path}"
@@ -323,9 +338,17 @@ class GitGUI:
             )
             self.staged_list.set_files(status.staged)
             
-            self.status_var.set(
-                f"Изменено: {status.total_changed}, Проиндексировано: {len(status.staged)}"
-            )
+            # Показываем информацию об удаленных файлах
+            deleted_count = len(status.deleted)
+            if deleted_count > 0:
+                self.status_var.set(
+                    f"Изменено: {status.total_changed}, Проиндексировано: {len(status.staged)} | "
+                    f"⚠️ Удалено файлов: {deleted_count}"
+                )
+            else:
+                self.status_var.set(
+                    f"Изменено: {status.total_changed}, Проиндексировано: {len(status.staged)}"
+                )
             
         except Exception as e:
             error_msg = str(e)
@@ -360,6 +383,69 @@ class GitGUI:
             self.status_var.set("Все файлы добавлены в индекс")
         else:
             messagebox.showerror("Ошибка", "Не удалось добавить файлы в индекс")
+    
+    def apply_deletions(self):
+        """Применить удаления для всех удаленных файлов"""
+        if not self.repo:
+            return
+        
+        # Получаем удаленные файлы из списка изменений
+        deleted_files = [f for f in self.changed_list.files if f.status == 'deleted']
+        
+        if not deleted_files:
+            messagebox.showinfo("Информация", "Нет удаленных файлов для применения")
+            return
+        
+        # Показываем список файлов для подтверждения
+        files_list = "\n".join([f"  • {f.path}" for f in deleted_files])
+        result = messagebox.askyesno(
+            "Подтверждение удаления",
+            f"Вы уверены, что хотите применить удаление следующих файлов?\n\n{files_list}\n\n"
+            "Это действие добавит удаление файлов в индекс Git."
+        )
+        
+        if result:
+            files = [f.path for f in deleted_files]
+            if self.repo.apply_deleted_files(files):
+                self.refresh_status()
+                self.status_var.set(f"Применено удаление {len(files)} файлов")
+                messagebox.showinfo("Успех", f"Удаление {len(files)} файлов применено успешно")
+            else:
+                messagebox.showerror("Ошибка", "Не удалось применить удаление файлов")
+    
+    def apply_selected_deletions(self):
+        """Применить удаления только для выбранных файлов"""
+        if not self.repo:
+            return
+        
+        selected = self.changed_list.get_selected_files()
+        if not selected:
+            messagebox.showinfo("Информация", "Выберите файлы для удаления")
+            return
+        
+        # Фильтруем только удаленные файлы
+        deleted_files = [f for f in selected if f.status == 'deleted']
+        
+        if not deleted_files:
+            messagebox.showinfo("Информация", "Среди выбранных файлов нет удаленных")
+            return
+        
+        # Показываем список файлов для подтверждения
+        files_list = "\n".join([f"  • {f.path}" for f in deleted_files])
+        result = messagebox.askyesno(
+            "Подтверждение удаления",
+            f"Вы уверены, что хотите применить удаление следующих файлов?\n\n{files_list}\n\n"
+            "Это действие добавит удаление файлов в индекс Git."
+        )
+        
+        if result:
+            files = [f.path for f in deleted_files]
+            if self.repo.apply_deleted_files(files):
+                self.refresh_status()
+                self.status_var.set(f"Применено удаление {len(files)} файлов")
+                messagebox.showinfo("Успех", f"Удаление {len(files)} файлов применено успешно")
+            else:
+                messagebox.showerror("Ошибка", "Не удалось применить удаление файлов")
     
     def unstage_selected(self):
         """Убрать файлы из индекса"""
